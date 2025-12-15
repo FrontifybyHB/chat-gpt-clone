@@ -34,7 +34,8 @@ const ConversationArea = () => {
         setIsDownloading(true)
         setShowPermissionModal(false)
 
-        const selectedtool = "Llama-3.1-8B-Instruct-q4f32_1-MLC";
+        // const selectedtool = "Llama-3.1-8B-Instruct-q4f32_1-MLC";
+        const selectedtool = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
 
         try {
             const engine = await webllm.CreateMLCEngine(selectedtool, {
