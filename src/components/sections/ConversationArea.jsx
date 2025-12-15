@@ -1,8 +1,7 @@
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import InputArea from './InputArea'
 import Messages from './Messages'
 import * as webllm from "@mlc-ai/web-llm";
-import OpenAI from "openai";
 import PermissionModel from './PermissionModel'
 import DowloadProgress from './DowloadProgress'
 
@@ -14,18 +13,9 @@ const ConversationArea = () => {
         }
     ])
 
-    const openaiKey = import.meta.env.VITE_OPENAI_API_KEY
-    
-    // Initialize OpenAI client
-    const openai = new OpenAI({
-        apiKey: openaiKey,
-        dangerouslyAllowBrowser: true
-    });
-
     const [input, setInput] = useState("")
     const [engine, setEngine] = useState(null)
     const [showPermissionModal, setShowPermissionModal] = useState(true)
-    const [useLocalLLM, setUseLocalLLM] = useState(false)
     const [isDownloading, setIsDownloading] = useState(false)
     const [downloadProgress, setDownloadProgress] = useState(0)
     const [isLoading, setIsLoading] = useState(false)
@@ -46,21 +36,28 @@ const ConversationArea = () => {
             })
 
             setEngine(engine)
-            setUseLocalLLM(true)
             setIsDownloading(false)
         } catch (err) {
             console.log("err", err)
             setIsDownloading(false)
-            setUseLocalLLM(false)
+            setMessages([...messages, {
+                role: "assistant",
+                content: "Failed to download the local model. Please try again or check your internet connection."
+            }])
         }
     }
 
-    const useAPIMode = () => {
+    const skipDownload = () => {
         setShowPermissionModal(false)
-        setUseLocalLLM(false)
+        setMessages([...messages, {
+            role: "assistant",
+            content: "You chose to skip the local model download. You can refresh the page to try again later."
+        }])
     }
 
     const sendMessageToLocalLLM = async () => {
+        if (input.trim() === "" || isLoading || !engine) return;
+
         const tempMessages = [...messages];
         tempMessages.push({
             role: "user",
@@ -83,88 +80,23 @@ const ConversationArea = () => {
             }])
         } catch (error) {
             console.error("Local LLM error:", error)
-            sendMessageToAPI(tempMessages)
-        } finally {
-            setIsLoading(false)
-        }
-    }
-
-    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
-
-    const sendMessageToAPI = async (tempMessages = null, retryCount = 0) => {
-        const messagesToSend = tempMessages || [...messages, {
-            role: "user",
-            content: input
-        }]
-
-        if (!tempMessages) {
-            setMessages(messagesToSend)
-            setInput("")
-        }
-
-        setIsLoading(true)
-
-        try {
-            const chatCompletion = await openai.chat.completions.create({
-                model: "gpt-4o-mini",
-                messages: messagesToSend
-            });
-
-            const text = chatCompletion.choices[0].message.content
-
-            setMessages([...messagesToSend, {
+            setMessages([...tempMessages, {
                 role: "assistant",
-                content: text
+                content: "Sorry, there was an error processing your message. Please try again."
             }])
-        } catch (error) {
-            console.error("API error:", error)
-            
-            // Handle specific OpenAI errors
-            if (error.status === 429) {
-                // Rate limit error - retry with exponential backoff
-                if (retryCount < 3) {
-                    const waitTime = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s
-                    setMessages([...messagesToSend, {
-                        role: "assistant",
-                        content: `Rate limit reached. Retrying in ${waitTime/1000} seconds...`
-                    }])
-                    
-                    await sleep(waitTime)
-                    return sendMessageToAPI(tempMessages, retryCount + 1)
-                } else {
-                    setMessages([...messagesToSend, {
-                        role: "assistant",
-                        content: "Sorry, I'm experiencing high traffic. Please try again in a few minutes, or consider using the local model for offline chat."
-                    }])
-                }
-            } else if (error.status === 401) {
-                setMessages([...messagesToSend, {
-                    role: "assistant",
-                    content: "Authentication error. Please check your API key."
-                }])
-            } else if (error.status === 503) {
-                setMessages([...messagesToSend, {
-                    role: "assistant",
-                    content: "OpenAI servers are currently overloaded. Please try again later."
-                }])
-            } else {
-                setMessages([...messagesToSend, {
-                    role: "assistant",
-                    content: "Sorry, I'm having trouble connecting. Please try again or use the local model."
-                }])
-            }
         } finally {
             setIsLoading(false)
         }
     }
 
     const sendMesageToLlm = () => {
-        if (input.trim() === "" || isLoading) return;
-        
-        if (useLocalLLM && engine) {
+        if (engine) {
             sendMessageToLocalLLM()
         } else {
-            sendMessageToAPI()
+            setMessages([...messages, {
+                role: "assistant",
+                content: "Please download the local model first to start chatting."
+            }])
         }
     }
 
@@ -173,7 +105,7 @@ const ConversationArea = () => {
             {showPermissionModal && (
                 <PermissionModel
                     downloadLocalLLM={downloadLocalLLM} 
-                    useAPIMode={useAPIMode}
+                    useAPIMode={skipDownload}
                 />
             )}
 
@@ -186,7 +118,7 @@ const ConversationArea = () => {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 sendMesageToLlm={sendMesageToLlm}
-                disabled={isDownloading}
+                disabled={isDownloading || isLoading || !engine}
             />
         </div>
     )
